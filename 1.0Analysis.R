@@ -1,4 +1,9 @@
-# This is the analysis code
+# This script conducts the central meta-analysis,
+# as well as the heterogeneity analysis
 
-library(ggplot2)
+
+
+##### Figure 1 #####
+
+##### Figure 2 #####
 
