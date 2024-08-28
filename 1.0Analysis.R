@@ -9,6 +9,8 @@ library(ggplot2)
 library(gridExtra)
 library(tidyr)
 library(plotbiomes)
+library(corrplot)
+library(metaforest)
 
 ##### Analysis #####
 set.seed(1)
@@ -298,6 +300,9 @@ whittaker_base_plot() +
   geom_point(data = paired_AGBSOC, aes(x = MAT, y = MAP*0.1)) +
   theme_minimal()
 
+# Figure S2
+VarImpPlot(mf)
+
 # Figure S3
 
 duragb <- ggplot(paired_AGBSOC, aes(x = Duration, y = yi.AGB)) +
@@ -319,7 +324,6 @@ grid.arrange(duragb, dursoc, ncol = 2)
 summary(lm(RR.AGB ~ Duration + MAT + MAP +  Magnitude, raw%>% subset(Treatment.Group == "W")))
 
 summary(lm(RR.SOC ~ Duration + MAT + MAP +  Magnitude, raw%>% subset(Treatment.Group == "W")))
-
 
 
 
