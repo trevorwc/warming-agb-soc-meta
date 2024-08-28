@@ -60,7 +60,7 @@ raw$SOC.C <- as.numeric(raw$SOC.C)
 paired_AGBSOC$SOC.T <- as.numeric(paired_AGBSOC$SOC.T)
 paired_AGBSOC$SOC.C <- as.numeric(paired_AGBSOC$SOC.C)
 
-paired_AGBSOC <- paired_AGBSOC %>% left_join(raw %>% select(SOC.C, SOC.T,AGB.C, Depth, Depth2, Season, Heat.A.S, RR.LPC, RR.RPC), by = c('SOC.C', 'SOC.T', 'AGB.C'))
+paired_AGBSOC <- paired_AGBSOC %>% left_join(raw %>% select(Duration, SOC.C, SOC.T,AGB.C, Depth, Depth2, Season, Heat.A.S, RR.LPC, RR.RPC), by = c('SOC.C', 'SOC.T', 'AGB.C'))
 
 
 length(unique(interaction(paired_AGBSOC$Latitude, paired_AGBSOC$Longitude)))
