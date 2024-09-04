@@ -352,3 +352,12 @@ pdp4 <- list_partial4[1][[1]] + ggtitle("High N")
 
 grid.arrange(pdp3, pdp4, ncol = 2)
 
+
+
+mf5 <- MetaForest(
+  yi.SOC ~  DT + MAP + MAT, #DT + MAP +clay_0_15,
+  v = "vi.SOC",
+  data = paired_AGBSOC %>% subset(MAT > -999 & MAP > -999), 
+  whichweights = "random",
+  num.trees = 10000
+)
