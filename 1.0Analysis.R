@@ -325,5 +325,30 @@ summary(lm(RR.AGB ~ Duration + MAT + MAP +  Magnitude, raw%>% subset(Treatment.G
 
 summary(lm(RR.SOC ~ Duration + MAT + MAP +  Magnitude, raw%>% subset(Treatment.Group == "W")))
 
+#### Figure S4 
 
+mf3 <- MetaForest(
+  yi.AGB ~  DT + MAP + MAT, #DT + MAP +clay_0_15,
+  v = "vi.AGB",
+  data = paired_AGBSOC %>% subset(MAT > -999 & MAP > -999 & N == "Low"), 
+  whichweights = "random",
+  num.trees = 10000
+)
+
+
+mf4 <- MetaForest(
+  yi.AGB ~  DT + MAP + MAT, #DT + MAP +clay_0_15,
+  v = "vi.AGB",
+  data = paired_AGBSOC %>% subset(MAT > -999 & MAP > -999 & N == "High"), 
+  whichweights = "random",
+  num.trees = 10000
+)
+
+list_partial3 <- PartialDependence(mf3, bw = FALSE,output = "list")
+list_partial4 <- PartialDependence(mf4, bw = FALSE,  output = "list")
+
+pdp3 <- list_partial3[1][[1]] + ggtitle("Low N")
+pdp4 <- list_partial4[1][[1]] + ggtitle("High N")
+
+grid.arrange(pdp3, pdp4, ncol = 2)
 
