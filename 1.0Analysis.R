@@ -22,6 +22,14 @@ paired_AGBSOC <- read.xlsx('/Users/trevor/Desktop/Research/Warming Ecosystem C/C
 agbsoc_colors <- c("AGB" = "#117733",
 "SOC" = "#582707")
 
+paired_AGBSOC$Study <- as.factor(paired_AGBSOC$Study)
+
+# The following two calls conduct a random-effects within subgroups and fixed between
+# but I don't think that 
+metafor::rma(yi = yi.AGB, vi = sqrt(vi.AGB), mods = ~ Study, data = paired_AGBSOC %>% subset(yi.AGB > -999 & vi.AGB > -999))
+
+metafor::rma(yi = yi.AGB, vi = sqrt(vi.AGB), mods = ~ Ecosystem, data = paired_AGBSOC)
+
 # this is where the actual analysis occurs
 meta_analysisAGB <- metagen(
   TE = yi.AGB, 
