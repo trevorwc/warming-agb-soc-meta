@@ -1,305 +1,478 @@
-###### Data Cleaning 
-# Given a dataset of paired AGB/SOC responses, we want to determine whether
-# any additional studies can be included
-### Imports #######
+#==== Data Cleaning =====
+ #    Identify sites with potential AGB/SOC measurements
+ #    Datasets:
+ #        Proprietary dataset (collected by Ji Chen, CAS)
+ #        Zhou et al., 2020. Sci. Total Env. 
+ #         + second version
+ #        MESI; Van Sundert et al., 2023. Global Change Biology
+ #    Pair lat/lon measurements from previous data,
+ #        Bai et al., 
+ #    determine whether present in proprietary
+
+#==== Imports =====
 library(dplyr)
 library(openxlsx)
-library(reshape2)
-library(dplyr)
 library(tidyr)
 library(writexl)
+library(readr)
 
-##### Functions #####
-"%nin%" <- Negate("%in%")
-
-outersect <- function(x, y) {
-  sort(c(setdiff(x, y),
-         setdiff(y, x)))
+#==== Define Functions ====
+get_mode <- function(x) {
+  x <- x[!is.na(x)]  
+  if (length(x) == 0) return(NA)  
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
 }
-##### Main ####
 
-# Read in the datasets
+safe_write_xlsx <- function(data, path) {
+  if (!file.exists(path)) {
+    write_xlsx(data, path)
+    message("File written to: ", path)
+  } else {
+    message("File already exists: ", path)
+  }
+}
 
-chenSoilC <- read.csv('/Users/trevor/Desktop/Research/Warming Ecosystem C/Raw Data/SoilC - Ji Chen.csv')
-zhouBiomass <- read.csv('/Users/trevor/Desktop/Research/Warming Ecosystem C/Raw Data/zhou_etal2022edited.csv')[,0:52]
-MESI <- read.csv('/Users/trevor/Desktop/Research/Warming Ecosystem C/Raw Data/mesi_main.csv')
+#==== Identify additional sites =====
+# Import datasets
+dataFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/Raw Data/data_sources_2024/'
 
-# Now just want to clean up the datasets a little bit
-# First, we can subset the MESI to warming treatments, and relevant responses
+chenSoilC <- read.xlsx(paste0(dataFolder, 'SoilC - Ji Chen.xlsx'))
+ # Proprietary dataset
 
-MESIw <- subset(MESI, grepl("w", treatment))
-MESIBiomass <- subset(MESIw, 
-                      #response == "fine_root_biomass" |
-                      #response == "total_biomass" |
-                      # response == "bgb_coarse" |
-                      # response == "bgb" |
-                      response == "agb" |
-                        # response == "leaf_biomass" |
-                        #response == "stem_biomass" |
-                        response == "agb_c" |
-                        response == "agb_coarse" #|
-                      #response == "bgb_c" |
-                      #response == "total_biomass_c" |
-                      #response == "wood_biomass" |
-                      #response == "wood_c"
-)
+# Round lat lon values to 2 decimals
+zhouBiomass <- read_csv(paste0(dataFolder, 'Dataset_of_global_warming_on_plant_biomass.csv'), show_col_types = FALSE) %>%
+  mutate(Latitude = round(Latitude, 2),
+         Longitude = round(Longitude, 2))
+ # Zhou et al., 2022, Science of the Total Environment
 
-MESISoil <- subset(MESIw, response == "soc" | response == "soil_total_c" )
+MESI <- read.csv(paste0(dataFolder, 'mesi_main.csv'))
+ # Van Sundert et al., 2023, GCB
 
-# Make a new treatment group variable
-MESISoil <- MESISoil %>% mutate(
-  Treatment.Group = case_when(
-    treatment == "cdw" ~ "CDW", 
-    treatment == "cfw" ~ "CFW",
-    treatment == "cw" ~ "CW",
-    treatment == "dw" ~ "DW",
-    treatment == "fw" ~ "FW",
-    treatment == "w" ~ "W"
-  )) 
+baiSOC <- read.xlsx(paste0(dataFolder, 'Warming-SOC-meta.xlsx'))
+ # Bai et al., 2023, GCB
 
-chenSoilC <- chenSoilC %>% mutate(
-  Treatment.Group = case_when(
-    Others.1 == "N addition" | Others.1 == "low N addition" | Others.1 == "high N addition" | Others.1 == "N+P" | 
-      Others.2 == "N addition" ~ "FW", 
-    Others.1 == "CO2 elevated" | Others.2 == "CO2 elevated" ~ "CW", Others.1 == "Increased precipitation" ~ "PW",
-    Others.1 == "Clipped" ~ "GW", Others.1 == "Grazing" | Others.1 == "Winter grazing" ~ "GW", 
-    TRUE ~ "W"
+# Round lat lon values
+sBiomass <-  read.xlsx(paste0(dataFolder,'Data S1-S4.xlsx'), check.names = TRUE) %>% 
+  mutate(Latitude = round(Latitude, 2),
+         Longitude = round(Longitude, 2))
+ # Zhou et al.,  (Internal)
+
+# Determine "pairs" in proprietary (having both AGB and SOC meas)
+chenPairs <- chenSoilC %>% subset(C.SOC > 0 & C.AGB > 0)
+print(nrow(chenPairs))
+ #    151 pairs
+
+# Create AGB subset
+zhouAGB <- zhouBiomass %>% subset(Biomass == "AGB")
+print(nrow(zhouAGB))
+ #    172 obs
+
+# Get measurements of AGB, AGB C, or coarse AGB under warming
+mesiAGB <- MESI %>% 
+  subset(grepl("w", treatment)) %>% 
+  subset(response == "agb" |
+          response == "agb_c" |
+           response == "agb_coarse")
+print(nrow(mesiAGB))
+ #    1279 obs
+
+# Get "proprietary" measurements of AGB where SOC is missing
+chenAGB <- chenSoilC %>% subset(C.AGB > 0 & is.na(C.SOC))
+print(nrow(chenAGB))
+ #    0 obs
+
+# Get additional AGB measurements (remove overlap sites)
+sAGB <- sBiomass %>% subset(`Aboveground..Biomass.control` > 0) %>% anti_join(zhouAGB, by = c('Latitude', 'Longitude'))
+print(nrow(sAGB))
+ # 11 obs
+
+# Create SOC subset
+# Get entries with SOC but no AGB
+chenSOC <- chenSoilC %>% subset(C.SOC > 0 & is.na(C.AGB))
+print(nrow(chenSOC))
+ # 786 obs
+
+mesiSOC <- MESI %>% 
+  subset(grepl("w", treatment)) %>% 
+  subset(response == "soc")
+print(nrow(mesiSOC))
+ # 225 obs
+
+# Find sites that may have been unpaired in proprietary
+agbSites <- data.frame(
+  "Latitude" = c(round(zhouAGB$Latitude, 2), 
+                 round(mesiAGB$Latitude, 2), 
+                 round(chenAGB$Latitude, 2),
+                 round(sAGB$Latitude, 2)),
+  "Longitude" = c(round(zhouAGB$Longitude, 2), 
+                  round(mesiAGB$Longitude, 2), 
+                  round(chenAGB$Longitude, 2),
+                  round(sAGB$Longitude, 2))
+) %>% unique()
+
+socSites <- data.frame(
+  "Latitude" = c(round(chenSOC$Latitude, 2),
+                 round(baiSOC$Latitude, 2),
+                 round(mesiSOC$Latitude, 2)),
+  "Longitude" = c(round(chenSOC$Longitude, 2),
+                 round(baiSOC$Longitude, 2),
+                 round(mesiSOC$Longitude, 2))
+) %>% unique()
+
+pairedSites <- chenPairs %>% dplyr::select(c('Latitude', 'Longitude')) %>% 
+  round(2) %>% 
+  unique()
+nrow(pairedSites)
+ # 51 unique sites
+
+potentialPairs <- agbSites %>% inner_join(socSites,
+                                          by = c('Latitude', 'Longitude'))
+print(nrow(potentialPairs))
+ # 55 potential sites in 'unpaired'
+
+# Remove sites in the paired datset
+# overlooked sites have AGB and SOC (potent. asynch. meas.) but not in paired dataset
+overlooked <- potentialPairs %>% anti_join(pairedSites,
+                                           by = c('Latitude', 'Longitude'))
+print(nrow(overlooked))
+ # 40 potentially overlooked sites
+
+#==== Determine which datasets may contain overlooked sites =====
+
+print(nrow(zhouAGB %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+print(nrow(mesiAGB %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+print(nrow(chenAGB %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+print(nrow(sAGB %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+print(nrow(chenSOC %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+print(nrow(baiSOC %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+print(nrow(mesiSOC %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
+
+#==== Standardize information presentation =====
+
+# checked completeness
+zhouAGB <- zhouAGB %>% 
+  mutate(
+    Air.DT = case_when(
+      `Note (temperature type)` == "air temperature" ~ Tdelta,
+      TRUE ~ NA
+    ),
+    Soil.DT = case_when(
+      `Note (temperature type)` == "soil temperature" ~ Tdelta,
+      TRUE ~ NA  
+    ),
+    Warming.Method = case_when(
+      `Warming method` == "heated OTC/greenhouse" ~ "O",
+      `Warming method` == "Infrared heater" ~ "I",
+      `Warming method` == "Cable" ~ "C",
+      `Warming method` == "Passive" ~ "P",
+      TRUE ~ NA
+    ),
+      Treatment.Group = case_when(
+        Treatment == "warming+N" | Nitrogen == "y"  
+        | Treatment == "+nutrients" | Treatment == "+ nutrients"
+        | Treatment == "warming+NP" | Treatment == "grazing excluded+N"
+        | Treatment == "warming+nutrients" ~ "FW",
+        Treatment == "drought" | Treatment == "Drought" 
+        | Treatment == "warming+drought" ~ "DW",
+        Treatment == "warming+h2o" | Treatment == "warming+water" 
+        | Treatment == "wet" ~ "IW",
+        Treatment == "+clipping" | Treatment == "+grazing" 
+        | Treatment == "low grazing" | Treatment == "high grazing"
+        | Treatment == "infrequently cut" | Treatment == "frequently cut" 
+        | Treatment == "warming+grazing"~ "GW",
+        Treatment == "warming+grazing+N" | Treatment == "low grazing+N" ~ "GFW",
+        Treatment == "warming+water+N" ~"IFW",
+        Treatment == "warming+litter" ~ "LW",
+        TRUE ~ "W"
+      )
   )
+
+
+mesiSOC <- mesiSOC %>%
+  mutate(
+    Treatment.Group = case_when(
+      treatment == "cdw" ~ "CDW", 
+      treatment == "cfw" ~ "CFW",
+      treatment == "cw" ~ "CW",
+      treatment == "dw" ~ "DW",
+      treatment == "fw" ~ "FW",
+      treatment == "iw" ~ "IW",
+      treatment == "w" ~ "W"
+    ),
+    Air.DT = w_t2,
+    Soil.DT = w_t3,
+    Warming.Method = case_when(
+      w_t1 == "_0001" ~ "I",
+      w_t1 == "_0110" ~ "O", 
+      TRUE ~ NA
+    ),
+    Sampled.Year = start_year + as.numeric(sampling_year) - 1
 )
 
-MESIBiomass <- MESIBiomass %>% mutate(
-  Treatment.Group = case_when(
-    treatment == "cdfw" ~ "CDFW",
-    treatment == "cdw" ~ "CDW", 
-    treatment == "cifw" ~ "CIFW",
-    treatment == "cfw" ~ "CFW",
-    treatment == "cw" ~ "CW",
-    treatment == "dw" ~ "DW",
-    treatment == "fw" ~ "FW",
-    treatment == "ifw" ~ "IFW",
-    treatment == "iw" ~ "IW",
-    treatment == "sw" ~ "SW",
-    treatment == "w" ~ "W"
-  )) 
-
-zhouBiomass <- zhouBiomass %>% mutate(
-  Treatment.Group = case_when(
-    Treatment == "+N" ~ "FW",
-    Treatment == "+grazing" ~ "GW",
-    Treatment == "+grazing+N" ~ "GFW", 
-    TRUE ~ "W"
+mesiAGB <- mesiAGB %>% 
+  mutate(
+    Treatment.Group = case_when(
+      treatment == "cdw" ~ "CDW", 
+      treatment == "cdfw" ~ "CDFW",
+      treatment == "cfw" ~ "CFW",
+      treatment == "ciw" ~ "CIW",
+      treatment == "cw" ~ "CW",
+      treatment == "dw" ~ "DW",
+      treatment == "fw" ~ "FW",
+      treatment == "w" ~ "W",
+      treatment == "ifw" ~ "IFW",
+      treatment == "IW" ~ "IW",
+      treatment == "SW" ~ "SW",
+      TRUE ~ "W"
+    ),
+    Air.DT = w_t2,
+    Soil.DT = w_t3,
+    Warming.Method = case_when(
+      w_t1 == "_0001" ~ "I",
+      w_t1 == "_0110" ~ "O", 
+      TRUE ~ NA
+    ),
+    Sampled.Year = start_year + as.numeric(sampling_year) - 1
   )
-)
 
-# Now, want to create two new variables, soil and air delta T
-
-MESISoil$Air.DT <- MESISoil$w_t2
-MESISoil$Soil.DT <- MESISoil$w_t3
-
-MESIBiomass$Air.DT <- MESIBiomass$w_t2
-MESIBiomass$Soil.DT <- MESIBiomass$w_t3
-
-chenSoilC <- chenSoilC %>% mutate(
-  Air.DT = case_when(
-    Others == "Air" ~ Magnitude, 
-    TRUE ~ -999
-  ),
-  Soil.DT = case_when(
-    Others == "Soil" ~ Magnitude,
-    TRUE ~ -999
+# checked
+chenSOC <- chenSOC %>% 
+  mutate(
+    Treatment.Group = case_when(
+      Others.1 == "N addition" | Others.1 == "low N addition" 
+      | Others.1 == "Low N addition" | Others.1 == "N-addition"
+      | Others.1 == "Nitrogen"
+      | Others.1 == "high N addition" | Others.1 == "N+P" 
+      | Others.1 == "High N addition"
+      | Others.2 == "N addition" | Others.1 == "Fertilized" ~ "FW", 
+      Others.1 == "CO2 elevated" | Others.2 == "CO2 elevated" | Others.1 == "CO2" ~ "CW", 
+      Others.1 == "Increased precipitation" | Others.1 == 'Irrigation' 
+      | Others.1 == "Precipitation" | Others.1 == "increased precipitation"
+      | Others.1 == "Precipitation increased" | Others.1 == "Watering" ~ "IW",
+      Others.1 == "Clipped" | Others.1 == "Grazing" | Others.1 == "Winter grazing"
+      | Others.1 == "High Grazing" | Others.1 == "High grazing" | Others.1 == "Low grazing" ~ "GW",
+      Others.1 == "CO2 elevated+Drought" ~ "CDW",
+      Others.1 == "Drought" | Others.1 == "Precipitation reduced" 
+      | Others.1 == "reduced precipitation" | Others.1 == "Reduced precipitation" ~ "DW",
+      Others.1 == "N addition+ Increased precipitation" | Others.1 == "Irrigation+fertilization" 
+      | Others.1 == "water addition+N addition(F10)" | Others.1 == "water addition+N addition(F50)" ~ "IFW",
+      Others.1 == "N addition+ Reduced precipitation" ~ "DFW",
+      Others.1 == "Irrigation+fertilization" | Others.1 == "N addition+Increased precipitation" ~ "IFW",
+      Others.1 == "Burned" | Others.1 == "Burned+Dry" | Others.1 == "light burned" ~ "BW",
+      TRUE ~ "W"
+    ),
+    Air.DT = case_when(
+      Others == "Air" ~ Magnitude, 
+      TRUE ~ NA_real_
+    ),
+    Soil.DT = case_when(
+      Others == "Soil" ~ Magnitude,
+      TRUE ~ NA_real_
+    ),
+    Warming.Method = case_when(
+      Method == "OTC" ~ "O",
+      Method == "IH" ~ "I",
+      Method == "Cables" ~ "C",
+      Others.1 == "OTC-1" |Others.1 == "OTC-2" | Others.1 == "OTC1" | Others.1 == "OTC2" ~ "O",
+      TRUE ~ NA_character_
+    )
   )
+
+
+baiSOC <- baiSOC %>% 
+  mutate(
+    Warming.Method = case_when(
+      Method == "Heating cables" ~ "C",
+      Method == "IR heaters" ~ "I",
+      Method == "greenhouse&OTC" ~ "O",
+      TRUE ~ NA_character_
+    )
 )
 
-
-zhouBiomass <- zhouBiomass %>% mutate(
-  Air.DT = case_when(
-    Note..temperature.type. == "air temperature" ~ Tdelta,
-    Note..temperature.type..1 == "air temperature" ~ Tdelta.1,
-    TRUE ~ -999
-  ),
-  Soil.DT = case_when(
-    Note..temperature.type. == "soil temperature" ~ Tdelta,
-    Note..temperature.type..1 == "soil temperature" ~ Tdelta.1,
-    TRUE ~ -999  
+# checked
+sAGB <- sAGB %>% 
+  mutate(
+    Treatment.Group = case_when(
+      Treatment == "+N" | Nitrogen == "y"  
+      | Treatment == "+nutrients" | Treatment == "+ nutrients" |
+        Treatment == "+NP" ~ "FW",
+      Treatment == "+drought" | Treatment == "drought" 
+      | Treatment == "Drought" ~ "DW",
+      Treatment == "+H2O" | Treatment == "+water" 
+      | Treatment == "wet" ~ "IW",
+      Treatment == "+clipping" | Treatment == "+grazing"  | Treatment == "+cliping"
+      | Treatment == "low grazing" | Treatment == "high grazing"
+      | Treatment == "infrequently cut" | Treatment == "frequently cut"~ "GW",
+      Treatment == "+grazing+N" | Treatment == "high grazing+N" | Treatment == "low grazing+N" ~ "GFW",
+      TRUE ~ "W"
+    ),
+    Air.DT = case_when(
+      `Note..temperature.type.` == "air temperature" ~ Tdelta,
+      `Note..temperature.type..1` == "air temperature" ~ Tdelta.1,
+      TRUE ~ NA_real_
+    ),
+    Soil.DT = case_when(
+      `Note..temperature.type.` == "soil temperature" ~ Tdelta,
+      `Note..temperature.type..1` == "soil temperature" ~ Tdelta.1,
+      TRUE ~ NA_real_  
+    )
   )
-)
 
-# And then fix the warming methodology variable
-
-MESISoil <- MESISoil %>% mutate(
-  Warming.Method = case_when(
-    w_t1 == "_0001" ~ "I",
-    w_t1 == "_0110" ~ "O", 
-    TRUE ~ "N.A."
-  )
-)
-
-MESIBiomass <- MESIBiomass %>% mutate(
-  Warming.Method = case_when(
-    w_t1 == "_0110" ~ "O",
-    w_t1 == "_0001" ~ "I",
-    TRUE ~ "N.A."
-  )
-)
-
-chenSoilC <- chenSoilC %>% mutate(
-  Warming.Method = case_when(
-    Method == "OTC" ~ "O",
-    Method == "IH" ~ "I",
-    Method == "Cables" ~ "C",
-    Others.1 == "OTC-1" |Others.1 == "OTC-2" | Others.1 == "OTC1" | Others.1 == "OTC2" ~ "O",
-    TRUE ~ "N.A."
-  )
-)
-
-zhouBiomass <- zhouBiomass %>% mutate(
-  Warming.Method = case_when(
-    Warming.method == "heated OTC/greenhouse" ~ "O",
-    Warming.method == "Infrared heater" ~ "I",
-    Warming.method == "Cable" ~ "C",
-    TRUE ~ "N.A."
-  )
-)
-
-# Make a year sampled variable
-
-MESISoil$Sampled.Year <- MESISoil$start_year + as.numeric(MESISoil$sampling_year) - 1
-
-MESIBiomass$Sampled.Year <- MESIBiomass$start_year + as.numeric(MESIBiomass$sampling_year) - 1
-
-chenSoilC$Sampled.Year <- "NA"
-
-zhouBiomass$Sampled.Year <- zhouBiomass$Duration
-
-###################
-
-chenSoilC$LatLonUnique <- paste0(chenSoilC$Latitude, chenSoilC$Logitude, chenSoilC$Treatment.Group, chenSoilC$Warming.Method, chenSoilC$Air.DT, chenSoilC$Soil.DT)
-zhouBiomass$LatLonUnique <- paste0(zhouBiomass$Lat, zhouBiomass$Long, zhouBiomass$Treatment.Group, zhouBiomass$Warming.Method, zhouBiomass$Air.DT, zhouBiomass$Soil.DT)
-MESISoil$LatLonUnique <-paste0(MESISoil$lat, MESISoil$lon, MESISoil$Treatment.Group, MESISoil$Warming.Method, MESISoil$Air.DT, MESISoil$Soil.DT)
-MESIBiomass$LatLonUnique <-paste0(MESIBiomass$lat, MESIBiomass$lon, MESIBiomass$Treatment.Group, MESIBiomass$Warming.Method, MESIBiomass$Air.DT, MESIBiomass$Soil.DT)
-
-chenSoilCCompleteData <- subset(chenSoilC, C.AGB > -999 & T.AGB > -999 & C.SOC > -999 & T.SOC > -999)
-
-chenSoilCIncompleteData <- subset(chenSoilC, LatLonUnique %nin% chenSoilCCompleteData$LatLonUnique)
-
-soilSites <- c(chenSoilCIncompleteData$LatLonUnique, MESISoil$LatLonUnique) %>% unique()
-biomassSites <- c(MESIBiomass$LatLonUnique, zhouBiomass$LatLonUnique) %>% unique()
-chenSites <- unique(chenSoilCCompleteData$LatLonUnique)
-
-commonLatLon <- intersect(soilSites, biomassSites)
-
-nonOverlapSites <- commonLatLon[commonLatLon %nin% chenSoilCCompleteData$LatLonUnique]
-
-MESIbUnique <- subset(MESIBiomass, LatLonUnique %in% nonOverlapSites)
-MESIsUnique <- subset(MESISoil, LatLonUnique %in% nonOverlapSites)
-# Filter out non-overlap sites 
-zhouUnique <- subset(zhouBiomass, LatLonUnique %in% nonOverlapSites & LatLonUnique %nin% MESIbUnique$LatLonUnique)
-chenICunique <- subset(chenSoilCIncompleteData,LatLonUnique %in% nonOverlapSites & LatLonUnique %nin% MESIsUnique$LatLonUnique)
-length(unique(c(MESIbUnique$LatLonUnique, MESIsUnique$LatLonUnique, zhouUnique$LatLonUnique, chenICunique$LatLonUnique)) %nin% chenSoilCCompleteData$LatLonUnique)
-
-##############
-
-# Soil: MESI, Chen
+#==== Combine =====
+# Soil: chenSOC, baiSOC, mesiSOC
 soilDataset <- data.frame(
-  "Study" = c(MESIsUnique$citation, chenICunique$Publication),
-  "Experiment" = c(MESIsUnique$exp, chenICunique$Title),
-  "Sampled.Year" = c(MESIsUnique$Sampled.Year, chenICunique$Sampled.Year),
-  "Treatment" = c(MESIsUnique$Treatment.Group, chenICunique$Treatment.Group), 
-  "Response" = c(MESIsUnique$response, rep("SOC", nrow(chenICunique))),
-  "C.n" = c(MESIsUnique$rep_c, chenICunique$C.Num),
-  "T.n" = c(MESIsUnique$rep_t, chenICunique$T.Num),
-  "SOC.C" = c(MESIsUnique$x_c, chenICunique$C.SOC),
-  "SD.C" = c(MESIsUnique$sd_c, chenICunique$SD.SOC),
-  "SOC.T" = c(MESIsUnique$x_t, chenICunique$T.SOC),
-  "SD.T" = c(MESIsUnique$sd_t, chenICunique$SD.SOC.1),
-  "Units" = c(MESIsUnique$x_units, chenICunique$Unit.SOC),
-  "Depth" = c(MESIsUnique$sampling_depth, chenICunique$Depth),
-  "Depth.Category" = c(rep("N.A.", nrow(MESIsUnique)), chenICunique$Depth2),
-  "Air.DT" = c(MESIsUnique$Air.DT, chenICunique$Air.DT),
-  "Soil.DT" = c(MESIsUnique$Soil.DT, chenICunique$Soil.DT),
-  "Warming.Method" = c(MESIsUnique$Warming.Method, chenICunique$Warming.Method), 
-  "Latitude" = c(MESIsUnique$lat, chenICunique$Latitude),
-  "Longitude" = c(MESIsUnique$lon, chenICunique$Logitude),
-  "LatLonUnique" = c(MESIsUnique$LatLonUnique, chenICunique$LatLonUnique),
-  "MAT" = c(MESIsUnique$mat, chenICunique$MAT),
-  "MAP" = c(MESIsUnique$map, chenICunique$MAP),
-  "Elevation" = c(MESIsUnique$elevation, chenICunique$Elevation),
-  "Ecosystem" = c(MESIsUnique$ecosystem_type, chenICunique$Vegetation),
-  "Vegetation.Type" = c(MESIsUnique$vegetation_type, chenICunique$Vegetation),
-  "Dominant.Vegetation" = c(MESIsUnique$dominant_species, rep("N.A.", nrow(chenICunique)))
+    "Study" = c(chenSOC$Publication, baiSOC$study, mesiSOC$citation),
+    "Experiment" = c(chenSOC$Title, baiSOC$unique.site, mesiSOC$exp),
+    "Latitude" = c(round(chenSOC$Latitude,2), round(baiSOC$Latitude,2), round(mesiSOC$Latitude,2)),
+    "Longitude" = c(round(chenSOC$Longitude,2), round(baiSOC$Longitude,2), round(mesiSOC$Longitude,2)),
+    "Treatment" = c(chenSOC$Treatment.Group, rep("W", nrow(baiSOC)), mesiSOC$Treatment.Group),
+    "Sampled.Year" = c(rep(NA, nrow(chenSOC)), rep(NA, nrow(baiSOC)), mesiSOC$Sampled.Year),
+    "Response" = c(rep("SOC", nrow(chenSOC)), rep("SOC", nrow(baiSOC)), mesiSOC$response),
+    "Duration" = c(chenSOC$Duration, baiSOC$Duration, mesiSOC$sampling_year),
+    "SCN" = c(rep(NA, nrow(chenSOC)), baiSOC$SCN, rep(NA, nrow(mesiSOC))),
+    "C.n" = c(chenSOC$C.Num, baiSOC$C.Num, mesiSOC$rep_c),
+    "T.n" = c(chenSOC$T.Num, baiSOC$T.Num, mesiSOC$rep_t),
+    "AGB.C" = c(chenSOC$C.SOC, rep(NA, nrow(baiSOC)), mesiSOC$x_c),
+    "SD.C" = c(chenSOC$SD.SOC, rep(NA, nrow(baiSOC)), mesiSOC$sd_c),
+    "AGB.T" = c(chenSOC$T.SOC, rep(NA, nrow(baiSOC)), mesiSOC$x_t),
+    "SD.T" = c(chenSOC$SD.SOC.1, rep(NA, nrow(baiSOC)), mesiSOC$sd_t),
+    "Units" = c(chenSOC$Unit.SOC, rep(NA, nrow(baiSOC)), mesiSOC$x_units),
+    "Depth" = c(chenSOC$Depth, rep(NA, nrow(baiSOC)), mesiSOC$sampling_depth),
+    "Depth.Category" = c(chenSOC$Depth2, rep(NA, nrow(baiSOC)), mesiSOC$sampling_depth),
+    "Air.DT" = c(chenSOC$Air.DT, rep(NA, nrow(baiSOC)), mesiSOC$Air.DT),
+    "Soil.DT" = c(chenSOC$Soil.DT, baiSOC$SoilT1, mesiSOC$Soil.DT),
+    "Warming.Method" = c(chenSOC$Warming.Method, baiSOC$Warming.Method, mesiSOC$Warming.Method),
+    "MAT" = c(chenSOC$MAT, baiSOC$MAT, mesiSOC$MAT),
+    "MAP" = c(chenSOC$MAP, baiSOC$MAP, mesiSOC$MAP),
+    "Elevation" = c(chenSOC$Elevation, rep(NA, nrow(baiSOC)), mesiSOC$Elevation),
+    "Ecosystem" = c(chenSOC$Vegetation, baiSOC$Ecosystem, mesiSOC$ecosystem_type),
+    "Vegetation.Type" = c(chenSOC$Vegetation, baiSOC$Ecosystem, mesiSOC$vegetation_type)
 )
 
+
+soilCleaned <- soilDataset %>%
+  # create a variable for the maximium of soil/ air warming
+  mutate(
+    maxWarming = round(pmax(Air.DT, Soil.DT), 1)
+  ) %>%
+  group_by(Latitude, 
+           Longitude, 
+           SOC.C, 
+           SOC.T, 
+           Treatment, 
+           maxWarming) %>%
+  mutate(non_na_count = rowSums(!is.na(across()))) %>%
+  arrange(desc(non_na_count)) %>%
+  summarise(
+    across(
+      .cols = everything(),
+      .fns = ~ {
+        first_non_na <- first(.[!is.na(.)])
+        if (!is.na(first_non_na)) first_non_na else get_mode(.)
+      }
+    ),
+    .groups = 'drop'
+  ) %>%
+  select(-non_na_count, -maxWarming) %>%
+  subset(Treatment == "W")
+
+' # template:
+data.frame(
+  "Study" = 
+  "Experiment" =
+  "Latitude" = 
+  "Longitude" = 
+  "Treatment" = 
+  "Sampled.Year" = 
+  "Response" = 
+  "Duration" = 
+  "SCN" = 
+  "C.n" = 
+  "T.n" = 
+  "SOC.C" = 
+  "SD.C" = 
+  "SOC.T" = 
+  "SD.T" = 
+  "Units" = 
+  "Depth" = 
+  "Depth.Category" = 
+  "Air.DT" = 
+  "Soil.DT" =
+  "Warming.Method" = 
+  "MAT" = 
+  "MAP" = 
+  "Elevation" = 
+  "Ecosystem" = 
+  "Vegetation.Type" = 
+  "Dominant.Vegetation" = 
+)
+'
 biomassDataset <- data.frame(
-  "Study" = c(MESIbUnique$citation, zhouUnique$Source),
-  "Experiment" = c(MESIbUnique$exp, zhouUnique$Experiment.name),
-  "Sampled.Year" = c(MESIbUnique$Sampled.Year, zhouUnique$Sampled.Year),
-  "Treatment" = c(MESIbUnique$Treatment.Group, zhouUnique$Treatment.Group),
-  "Response" = c(MESIbUnique$response, rep("AGB", nrow(zhouUnique))),
-  # It appears that nT and nC are the same (assuming for Zhou)
-  "C.n" = c(MESIbUnique$rep_c, zhouUnique$n.1),
-  "T.n" = c(MESIbUnique$rep_t, zhouUnique$n.1),
-  "AGB.C" = c(MESIbUnique$x_c, zhouUnique$Aboveground..Biomass.control),
-  "SD.C" = c(MESIbUnique$sd_c, zhouUnique$Csd.1),
-  "AGB.T" = c(MESIbUnique$x_t, zhouUnique$Aboveground.Biomass.warmed),
-  "SD.T" = c(MESIbUnique$sd_t, zhouUnique$Tsd.1),
-  "Units" = c(MESIbUnique$x_units, rep("N.A.", nrow(zhouUnique))),
-  "Air.DT" = c(MESIbUnique$Air.DT, zhouUnique$Air.DT),
-  "Soil.DT" = c(MESIbUnique$Soil.DT, zhouUnique$Soil.DT),
-  "Warming.Method" = c(MESIbUnique$Warming.Method, zhouUnique$Warming.Method), 
-  "Latitude" = c(MESIbUnique$lat, zhouUnique$Lat),
-  "Longitude" = c(MESIbUnique$lon, zhouUnique$Long),
-  "LatLonUnique" = c(MESIbUnique$LatLonUnique, zhouUnique$LatLonUnique),
-  "MAT" = c(MESIbUnique$mat, zhouUnique$MAT),
-  "MAP" = c(MESIbUnique$map, zhouUnique$MAP),
-  "Elevation" = c(MESIbUnique$elevation, rep("N.A.", nrow(zhouUnique))),
-  "Ecosystem" = c(MESIbUnique$ecosystem_type, zhouUnique$Ecosystems),
-  "Vegetation.Type" = c(MESIbUnique$vegetation_type, zhouUnique$Vegetation.type),
-  # Might also want to fix this variable
-  "Dominant.Vegetation" = c(MESIbUnique$dominant_species, zhouUnique$Species.1)
+  "Study" = c(zhouAGB$Study, mesiAGB$citation, sAGB$Study),
+    "Experiment" = c(zhouAGB$Study, mesiAGB$study, sAGB$Experiment.name),
+    "Latitude" = c(zhouAGB$Latitude, mesiAGB$Latitude, sAGB$Latitude),
+    "Longitude" = c(zhouAGB$Longitude, mesiAGB$Longitude, sAGB$Longitude),
+    "Treatment" = c(zhouAGB$Treatment.Group, mesiAGB$Treatment.Group, sAGB$Treatment.Group),
+    "Sampled.Year" = c(rep(NA,nrow(zhouAGB)), mesiAGB$Sampled.Year, rep(NA, nrow(sAGB))),
+    "Response" = c(zhouAGB$Biomass, mesiAGB$response, rep("AGB", nrow(sAGB))), 
+    "Duration" = c(zhouAGB$Duration, mesiAGB$sampling_year, sAGB$Duration),
+    "SCN" = c(zhouAGB$SCN, rep(NA, nrow(mesiAGB)), sAGB$SCN),
+    "C.n" = c(zhouAGB$n, mesiAGB$rep_c, sAGB$n.1), 
+    "T.n" = c(zhouAGB$n, mesiAGB$rep_t, sAGB$n.1),
+    "SOC.C" = c(zhouAGB$Control, mesiAGB$x_c, sAGB$Aboveground..Biomass.control),
+    "SD.C" = c(zhouAGB$Csd, mesiAGB$sd_c, sAGB$Csd.1),
+    "SOC.T" = c(zhouAGB$Warmed, mesiAGB$x_t, sAGB$Aboveground.Biomass.warmed),
+    "SD.T" = c(zhouAGB$Tsd, mesiAGB$sd_t, sAGB$Tsd.1),
+    "Units" = c(rep(NA, nrow(zhouAGB)), mesiAGB$x_units, rep(NA, nrow(sAGB))),
+    "Air.DT" = c(zhouAGB$Air.DT, mesiAGB$Air.DT, sAGB$Air.DT),
+    "Soil.DT" = c(zhouAGB$Soil.DT, mesiAGB$Soil.DT, sAGB$Soil.DT),
+    "Warming.Method" = c(zhouAGB$Warming.Method, mesiAGB$Warming.Method, sAGB$Warming.method),
+    "MAT" = c(zhouAGB$MAT, mesiAGB$MAT, sAGB$MAT),
+    "MAP" = c(zhouAGB$MAP, mesiAGB$MAP, sAGB$MAP),
+    "Elevation" = c(rep(NA, nrow(zhouAGB)), mesiAGB$Elevation, rep(NA, nrow(sAGB))),
+    "Ecosystem" = c(zhouAGB$Ecosystems, mesiAGB$ecosystem_type, sAGB$Ecosystems),
+    "Vegetation.Type" = c(zhouAGB$`Vegetation type`, mesiAGB$vegetation_type, sAGB$Vegetation.type),
+    "Dominant.Vegetation" = c(zhouAGB$`Mycorrhizal Type`, mesiAGB$dominant_species, sAGB$Mycorrhizal.Type)
 )
 
-# Now want to rename the paired datapoints from Chen and export
-chenPairedDataset <- data.frame(
-  "Study" = chenSoilCCompleteData$Publication,
-  "Experiment" = rep(chenSoilCCompleteData$Title),
-  "Treatment" = chenSoilCCompleteData$Treatment.Group,
-  "Warming.Method" = chenSoilCCompleteData$Warming.Method,
-  "Response" = rep("SOC", nrow(chenSoilCCompleteData)),
-  "C.n.SOC" = chenSoilCCompleteData$C.Num,
-  "T.n.SOC" = chenSoilCCompleteData$T.Num,
-  "SOC.C" = chenSoilCCompleteData$C.SOC,
-  "SD.C.SOC" = chenSoilCCompleteData$SD.SOC,
-  "SOC.T" = chenSoilCCompleteData$T.SOC,
-  "SD.T.SOC" = chenSoilCCompleteData$SD.SOC.1,
-  "Units.SOC" = chenSoilCCompleteData$Unit.SOC,
-  "Depth.SOC" = chenSoilCCompleteData$Depth,
-  "Notes.SOC" = chenSoilCCompleteData$Source.SOC, 
-  "C.n.AGB" =chenSoilCCompleteData$C.Num.1,
-  "T.n.AGB" = chenSoilCCompleteData$T.Num.1,
-  "AGB.C" =chenSoilCCompleteData$C.AGB,
-  "AGB.T" = chenSoilCCompleteData$T.AGB,
-  "SD.C.AGB" = chenSoilCCompleteData$SD.AGB,
-  "SD.T.AGB" = chenSoilCCompleteData$SD.AGB.1,
-  "Units.AGB" = chenSoilCCompleteData$Unit.AGB,
-  "Notes.AGB" = chenSoilCCompleteData$Source.AGB,
-  "Air.DT" = chenSoilCCompleteData$Air.DT,
-  "Soil.DT" = chenSoilCCompleteData$Soil.DT,
-  "Latitude" = chenSoilCCompleteData$Latitude,
-  "Longitude" = chenSoilCCompleteData$Logitude,
-  "LatLonUnique" = chenSoilCCompleteData$LatLonUnique,
-  "MAT" = chenSoilCCompleteData$MAT,
-  "MAP" = chenSoilCCompleteData$MAP,
-  "Elevation" = chenSoilCCompleteData$Elevation,
-  "Ecosystem" = chenSoilCCompleteData$Vegetation,
-  "Vegetation.Type" = chenSoilCCompleteData$Vegetation,
-  "Dominant.Vegetation" = rep("N.A.", nrow(chenSoilCCompleteData))
-)
+biomassCleaned <- biomassDataset %>%
+  # create a variable for the maximium of soil/ air warming
+  mutate(
+    maxWarming = round(pmax(Air.DT, Soil.DT), 1)
+  ) %>%
+  group_by(Latitude, 
+           Longitude, 
+           SOC.C, 
+           SOC.T, 
+           Treatment, 
+           maxWarming) %>%
+  mutate(non_na_count = rowSums(!is.na(across()))) %>%
+  arrange(desc(non_na_count)) %>%
+  summarise(
+    across(
+      .cols = everything(),
+      .fns = ~ {
+        first_non_na <- first(.[!is.na(.)])
+        if (!is.na(first_non_na)) first_non_na else get_mode(.)
+      }
+    ),
+    .groups = 'drop'
+  ) %>%
+  select(-non_na_count, -maxWarming) %>%
+  subset(Treatment == "W")
+
+biomassCleaned[] <- lapply(biomassCleaned, function(x) iconv(as.character(x), from = "", to = "UTF-8", sub = ""))
 
 
-
-# WILL OVERWRITE! must remove overwrite = FALSE
-#write_xlsx(soilDataset, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/soilDataset6-5.xlsx", overwrite = FALSE)
-#write_xlsx(biomassDataset, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/biomassDataset6-5.xlsx", overwrite = FALSE)
-#write_xlsx(chenPairedDataset, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedChenDatsaset6-5.xlsx", overwrite = FALSE)
+safe_write_xlsx(soilCleaned, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/soilDataset11-7.xlsx")
+safe_write_xlsx(biomassCleaned, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/biomassDataset11-7.xlsx")
+#safe_write_xlsx(chenPairedDataset, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedChenDatsaset11-7.xlsx")
 
 # Now that the data has been exported, need to fill in missing data, and then perform a unit conversion where necessary
