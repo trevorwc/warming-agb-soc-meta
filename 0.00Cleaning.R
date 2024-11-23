@@ -1,4 +1,4 @@
-#==== Data Cleaning =====
+#==== Data Cleaning ============================================================
  #    Identify sites with potential AGB/SOC measurements
  #    Datasets:
  #        Proprietary dataset (collected by Ji Chen, CAS)
@@ -9,14 +9,14 @@
  #        Bai et al., 
  #    determine whether present in proprietary
 
-#==== Imports =====
+#==== Imports ==================================================================
 library(dplyr)
 library(openxlsx)
 library(tidyr)
 library(writexl)
 library(readr)
 
-#==== Define Functions ====
+#==== Define Functions =========================================================
 get_mode <- function(x) {
   x <- x[!is.na(x)]  
   if (length(x) == 0) return(NA)  
@@ -33,7 +33,7 @@ safe_write_xlsx <- function(data, path) {
   }
 }
 
-#==== Identify additional sites =====
+#==== Identify additional sites ================================================
 # Import datasets
 dataFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/Raw Data/data_sources_2024/'
 
@@ -138,7 +138,7 @@ overlooked <- potentialPairs %>% anti_join(pairedSites,
 print(nrow(overlooked))
  # 40 potentially overlooked sites
 
-#==== Determine which datasets may contain overlooked sites =====
+#---- Determine which datasets may contain overlooked sites---------------------
 
 print(nrow(zhouAGB %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
 
@@ -154,7 +154,7 @@ print(nrow(baiSOC %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
 
 print(nrow(mesiSOC %>% right_join(overlooked, by = c("Latitude", "Longitude"))))
 
-#==== Standardize information presentation =====
+#---- Standardize information presentation -------------------------------------
 
 # checked completeness
 zhouAGB <- zhouAGB %>% 
@@ -325,7 +325,7 @@ sAGB <- sAGB %>%
     )
   )
 
-#==== Combine =====
+#---- Combine ------------------------------------------------------------------
 # Soil: chenSOC, baiSOC, mesiSOC
 soilDataset <- data.frame(
     "Study" = c(chenSOC$Publication, baiSOC$study, mesiSOC$citation),
@@ -416,7 +416,7 @@ data.frame(
 '
 biomassDataset <- data.frame(
   "Study" = c(zhouAGB$Study, mesiAGB$citation, sAGB$Study),
-    "Experiment" = c(zhouAGB$Study, mesiAGB$study, sAGB$Experiment.name),
+    "Experiment" = c(zhouAGB$so, mesiAGB$study, sAGB$Source),
     "Latitude" = c(zhouAGB$Latitude, mesiAGB$Latitude, sAGB$Latitude),
     "Longitude" = c(zhouAGB$Longitude, mesiAGB$Longitude, sAGB$Longitude),
     "Treatment" = c(zhouAGB$Treatment.Group, mesiAGB$Treatment.Group, sAGB$Treatment.Group),
@@ -473,6 +473,6 @@ biomassCleaned[] <- lapply(biomassCleaned, function(x) iconv(as.character(x), fr
 
 safe_write_xlsx(soilCleaned, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/soilDataset11-7.xlsx")
 safe_write_xlsx(biomassCleaned, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/biomassDataset11-7.xlsx")
-#safe_write_xlsx(chenPairedDataset, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedChenDatsaset11-7.xlsx")
+safe_write_xlsx(chenPairs, "/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedChenDatsaset11-7.xlsx")
 
 # Now that the data has been exported, need to fill in missing data, and then perform a unit conversion where necessary
