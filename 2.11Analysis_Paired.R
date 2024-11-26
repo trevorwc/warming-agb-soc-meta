@@ -1,56 +1,24 @@
-#==== Analysis =================================================================
- # After pre-processing and generating site level average in terms of g/m2
- # It is time to perform the analysis
+#==== Analysis- paired datset ==================================================
+ # Interested in also quantifying the effects in the directly paired measurements
+ # Mostly want to re-run analysis, remake figures
+ # The input data is a pre-matched dataset that has been ammended to 
+ # include ancillary variables
+ # 
+ # Note path: users/
 
 #==== Package Imports ==========================================================
-library(meta)
-library(metafor)
+
 library(openxlsx)
-library(ggplot2)
+library(meta)
 library(dplyr)
-library(MASS)
-library(lmodel2)
-library(gridExtra)
+library(ggplot2)
 library(cowplot)
+library(MASS)
 
-#==== Functions ================================================================
-
-calc_effect_sizes <- function(df){
-  df2 <- escalc(
-    measure = "ROM",
-    m1i = M.T.ECO, sd1i = sqrt(V.T.ECO), n1i = T.n,
-    m2i = M.C.ECO, sd2i = sqrt(V.C.ECO), n2i = C.n,
-    data = df
-  ) %>% rename(
-    yi.ECO = yi,
-    vi.ECO = vi
-  )
-  
-  df3 <- escalc(
-    measure = "ROM",
-    m1i = M.T.AGB, sd1i = sqrt(V.T.AGB), n1i = T.n,
-    m2i = M.C.AGB, sd2i = sqrt(V.C.AGB), n2i = C.n,
-    data = df2
-  ) %>% rename(
-    yi.AGB = yi,
-    vi.AGB = vi
-  )
-  
-  df4 <- escalc(
-    measure = "ROM",
-    m1i = M.T.SOC, sd1i = sqrt(V.T.SOC), n1i = T.n,
-    m2i = M.C.SOC, sd2i = sqrt(V.C.SOC), n2i = C.n,
-    data = df3
-  ) %>% rename(
-    yi.SOC = yi,
-    vi.SOC = vi
-  )
-  return(df4)
-}
-
+#===== Functions ===============================================================
 categorize_temperature <- function(df) {
   df %>% mutate(
-    maxWarming = pmax(`Air.DT.AGB`, `Soil.DT.AGB`, `Air.DT.SOC`, `Soil.DT.SOC`, na.rm = TRUE),
+    maxWarming = pmax(`Air.DT`, `Soil.DT`, na.rm = TRUE),
     warmingCategory = case_when(
       maxWarming < 1.5 ~ "< 1.5",
       (maxWarming >= 1.5) & (maxWarming < 2.5) ~ "1.5 - 2.5",
@@ -60,302 +28,226 @@ categorize_temperature <- function(df) {
   )
 }
 
+standardize_ecosystem_type <- function(df) {
+  col = "Ecosystem"
+  df %>% mutate(
+    Ecosystem = case_when(
+      .data[[col]] %in% c("Farmland") ~ "Agriculture",
+      .data[[col]] %in% c("Forest") ~ "Forest",
+      .data[[col]] %in% c("grassland", "Grassland") ~ "Grassland",
+      .data[[col]] %in% c("shrubland","Shrubland/Heathland") ~ "Shrubland",
+      .data[[col]] %in% c("tundra", "Tundra") ~ "Tundra"
+    )
+  ) 
+}
+
 #==== Dataset Imports ==========================================================
+
+figureFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/Figures/25november_pairedData'
 dataFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported'
-figureFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/Figures/22november'
 
-paired_full <- read.xlsx(paste0(dataFolder,'/pairedfull_11-22.xlsx'))
-paired_last <- read.xlsx(paste0(dataFolder, '/pairedlast_11-22.xlsx'))
+paired_AGBSOC <- read.xlsx(paste0(dataFolder, '/metaAGBSOCECO_8-28-24.xlsx')) %>%
+  standardize_ecosystem_type() %>%
+  categorize_temperature()
 
+#.... Basic dataset infomation .................................................
 
-paired_full_yi <- paired_full %>% 
-  calc_effect_sizes() %>% 
-  categorize_temperature() %>%
-  subset((vi.AGB/yi.AGB < 1000) & !is.na(warmingCategory)) 
+nrow(unique(paired_AGBSOC %>% dplyr::select(c(Latitude, Longitude))))
 
-paired_last_yi <- paired_last %>% 
-  calc_effect_sizes() %>% 
-  categorize_temperature() %>%
-  subset((vi.AGB/yi.AGB < 1000) & !is.na(warmingCategory)) 
-
-#----- Last observation dataset ------------------------------------------------
-
-#.... AGB ......................................................................
-
-meta.agb.last <- metagen(
+#.... Conduct separate meta-analyses ...........................................
+meta_analysisAGB <- metagen(
   TE = yi.AGB, 
   seTE = sqrt(vi.AGB),
-  data = paired_last_yi,
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
+  data = paired_AGBSOC,
   subgroup = warmingCategory,
+  studlab = Study,
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) 0.0511 [-0.0182; 0.1204] 1.47  0.1462
 
-meta.agb.last.byeco <- metagen(
+ # Random effects model (HK) 0.0824 [0.0315; 0.1333] 3.20  0.0017
+
+meta_analysisSOC <- metagen(
+  TE = yi.SOC, 
+  seTE = sqrt(vi.SOC),
+  data = paired_AGBSOC,
+  subgroup = warmingCategory,
+  studlab = Study,
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
+  hakn = TRUE,
+  method.tau = "REML"
+)
+ # Random effects model (HK) -0.0059 [-0.0327; 0.0209] -0.43  0.6644
+
+
+meta_analysisECO <- metagen(
+  TE = yi.ECO, 
+  seTE = sqrt(vi.ECO),
+  data = paired_AGBSOC,
+  subgroup = warmingCategory,
+  studlab = Study,
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
+  hakn = TRUE,
+  method.tau = "REML"
+)
+ # Random effects model (HK) 0.0120 [-0.0132; 0.0371] 0.94  0.3483
+
+meta_analysisAGB.byeco <- metagen(
   TE = yi.AGB, 
   seTE = sqrt(vi.AGB),
-  data = paired_last_yi,
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
+  data = paired_AGBSOC,
   subgroup = Ecosystem,
-  hakn = TRUE,
-  method.tau = "REML"
-)
-
-
-meta.agb.last.lowN <- metagen(
-  TE = yi.AGB, 
-  seTE = sqrt(vi.AGB),
-  data = paired_last_yi %>% subset(avg_SCN >= 15),
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
-  hakn = TRUE,
-  method.tau = "REML"
-)
-# Random effects model (HK) 0.2777 [0.1403; 0.4152] 4.57  0.0013
-
-print(100*(exp(0.2777)-1))
-print(100*(exp(0.1403)-1))
-print(100*(exp(0.4152)-1))
-
-meta.agb.last.highN <- metagen(
-  TE = yi.AGB, 
-  seTE = sqrt(vi.AGB),
-  data = paired_full_yi %>% subset(avg_SCN < 15),
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) 0.0215 [-0.0426; 0.0857] 0.67  0.5052
 
-#.... SOC ......................................................................
+# Random effects model (HK) 0.0824 [0.0315; 0.1333] 3.20  0.0017
 
-meta.soc.last <- metagen(
+meta_analysisSOC.byeco <- metagen(
   TE = yi.SOC, 
   seTE = sqrt(vi.SOC),
-  data = paired_last_yi,
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
-  subgroup = warmingCategory,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) -0.0045 [-0.0303; 0.0214] -0.35  0.7298
-
-meta.soc.last.byeco <- metagen(
-  TE = yi.SOC, 
-  seTE = sqrt(vi.SOC),
-  data = paired_last_yi,
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
+  data = paired_AGBSOC,
   subgroup = Ecosystem,
-  hakn = TRUE,
-  method.tau = "REML"
-)
-
-meta.SOC.last.lowN <- metagen(
-  TE = yi.SOC, 
-  seTE = sqrt(vi.SOC),
-  data = paired_last_yi %>% subset(avg_SCN >= 15),
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0651 [-0.1547; 0.0246] -1.64  0.1352
+# Random effects model (HK) -0.0059 [-0.0327; 0.0209] -0.43  0.6644
 
-meta.SOC.last.highN <- metagen(
-  TE = yi.SOC, 
-  seTE = sqrt(vi.SOC),
-  data = paired_last_yi %>% subset(avg_SCN < 15),
-  comb.fixed = FALSE, # random-effects model
-  comb.random = TRUE,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) -0.0126 [-0.0439; 0.0188] -0.81  0.4241
 
-#.... ECO ......................................................................
-
-meta.eco.last <- metagen(
+meta_analysisECO.byeco <- metagen(
   TE = yi.ECO, 
   seTE = sqrt(vi.ECO),
-  data = paired_last_yi ,
-  comb.fixed = FALSE, # random-effects model
-  comb.random = TRUE,
-  subgroup = warmingCategory,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) 0.0058 [-0.0200; 0.0316] 0.45  0.6559 
-
-meta.eco.last.byeco <- metagen(
-  TE = yi.ECO, 
-  seTE = sqrt(vi.ECO),
-  data = paired_last_yi ,
-  comb.fixed = FALSE, # random-effects model
-  comb.random = TRUE,
+  data = paired_AGBSOC,
   subgroup = Ecosystem,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- 
-meta.eco.last.lowN <- metagen(
-  TE = yi.ECO, 
-  seTE = sqrt(vi.ECO),
-  data = paired_last_yi %>% subset(avg_SCN >= 15) ,
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0113 [-0.1314; 0.1088] -0.21  0.8367
+# Random effects model (HK) 0.0120 [-0.0132; 0.0371] 0.94  0.3483
 
-meta.eco.last.highN <- metagen(
-  TE = yi.ECO, 
-  seTE = sqrt(vi.ECO),
-  data = paired_last_yi %>% subset(avg_SCN >= 15) ,
-  comb.fixed = FALSE, # random-effects model
-  comb.random = TRUE,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) -0.0113 [-0.1314; 0.1088]
-
-
-#----- Full observation dataset ------------------------------------------------
-
-meta.agb.full <- metagen(
+# Now specifically look at the sites with high vs. low N 
+meta_analysisAGB_Nlim <- metagen(
   TE = yi.AGB, 
   seTE = sqrt(vi.AGB),
-  data = paired_full_yi,
-  comb.fixed = FALSE, 
+  data = paired_AGBSOC %>% subset(N == "Low"),
+  subgroup = Ecosystem,
+  studlab = Study,
+  comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
-  subgroup = warmingCategory,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) 0.0451 [-0.0097; 0.0998] 1.64  0.1053
+ # Random effects model (HK) 0.1808 [0.0476; 0.3140] 2.86  0.0108
 
-meta.agb.lowN <- metagen(
+meta_analysisAGB_Nhigh <- metagen(
   TE = yi.AGB, 
   seTE = sqrt(vi.AGB),
-  data = paired_full_yi %>% subset(avg_SCN >= 15),
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) 0.2689 [0.1304; 0.4073] 4.33  0.0015
-
-meta.agb.full.highN <- metagen(
-  TE = yi.AGB, 
-  seTE = sqrt(vi.AGB),
-  data = paired_full_yi %>% subset(avg_SCN < 15),
+  data = paired_AGBSOC %>% subset(N == "High"),
+  subgroup = Ecosystem,
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) 0.0215 [-0.0426; 0.0857] 0.67  0.5052
+ # Random effects model (HK) 0.0537 [-0.0076; 0.1151] 1.74  0.0854
 
-#....SOC .......................................................................
-
-meta.soc.full <- metagen(
+meta_analysisSOC_Nlim <- metagen(
   TE = yi.SOC, 
   seTE = sqrt(vi.SOC),
-  data = paired_full_yi,
-  comb.fixed = FALSE, 
-  comb.random = TRUE,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) -0.0048 [-0.0077; -0.0019] -3.27  0.0015
-
-meta.SOC.lowN <- metagen(
-  TE = yi.SOC, 
-  seTE = sqrt(vi.SOC),
-  data = paired_full_yi %>% subset(avg_SCN >= 15),
+  data = paired_AGBSOC %>% subset(N == "Low"),
+  subgroup = Ecosystem,
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0650 [-0.1487; 0.0188] -1.73  0.1146
+# Random effects model (HK) -0.0629 [-0.1330; 0.0072] -1.89  0.0755
 
-meta.SOC.highN <- metagen(
+meta_analysisSOC_Nhigh <- metagen(
   TE = yi.SOC, 
   seTE = sqrt(vi.SOC),
-  data = paired_full_yi %>% subset(avg_SCN < 15),
+  data = paired_AGBSOC %>% subset(N == "High"),
+  subgroup = Ecosystem,
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0103 [-0.0379; 0.0173] -0.74  0.4590
+# Random effects model (HK) -0.0003 [-0.0262; 0.0255] -0.03  0.9791
 
-#.... ECO ......................................................................
-
-meta.eco.full <- metagen(
+meta_analysisECO_Nlim <- metagen(
   TE = yi.ECO, 
   seTE = sqrt(vi.ECO),
-  data = paired_full_yi ,
+  data = paired_AGBSOC %>% subset(N == "Low"),
+  subgroup = Ecosystem,
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) 0.0054 [-0.0172; 0.0281] 0.48  0.6353
+# Random effects model (HK) -0.0353 [-0.1142; 0.0435] -0.95  0.3573
 
-meta.eco.full.lowN <- metagen(
+meta_analysisECO_Nhigh <- metagen(
   TE = yi.ECO, 
   seTE = sqrt(vi.ECO),
-  data = paired_full_yi %>% subset(avg_SCN >= 15) ,
+  data = paired_AGBSOC %>% subset(N == "High"),
+  subgroup = Ecosystem,
+  studlab = Study,
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0113 [-0.1233; 0.1007] -0.22  0.8270
+# Random effects model (HK) 0.0159 [-0.0111; 0.0428] 1.17  0.2449
 
-meta.eco.full.highN <- metagen(
-  TE = yi.ECO, 
-  seTE = sqrt(vi.ECO),
-  data = paired_full_yi %>% subset(avg_SCN < 15) ,
-  comb.fixed = FALSE, # random-effects model
-  comb.random = TRUE,
-  hakn = TRUE,
-  method.tau = "REML"
-)
- # Random effects model (HK) -0.0021 [-0.0289; 0.0247] -0.16  0.8770
 
-#---- Subgroup Analysis --------------------------------------------------------
-
-meta.SOC.last.AGBinc <- metagen(
+meta_analysisSOC.AGBinc <- metagen(
   TE = yi.SOC, 
   seTE = sqrt(vi.SOC),
-  data = paired_last_yi %>% subset(yi.AGB > 0),
+  data = paired_AGBSOC %>% subset(yi.AGB > 0),
   comb.fixed = FALSE, 
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0017 [-0.0085; 0.0050] -0.52  0.6038
 
-meta.SOC.last.AGBdec <- metagen(
+meta_analysisSOC.AGBdec <- metagen(
   TE = yi.SOC, 
   seTE = sqrt(vi.SOC),
-  data = paired_last_yi %>% subset(yi.AGB < 0),
+  data = paired_AGBSOC %>% subset(yi.AGB <= 0),
   comb.fixed = FALSE, 
   comb.random = TRUE,
   hakn = TRUE,
   method.tau = "REML"
 )
- # Random effects model (HK) -0.0494 [-0.0698; -0.0291] -4.98 < 0.0001
+
+metagen(
+  TE = yi.ECO, 
+  seTE = sqrt(vi.ECO),
+  data = paired_AGBSOC %>% subset((yi.SOC < 0) & (yi.AGB > 0)),
+  subgroup = Ecosystem,
+  studlab = Study,
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
+  hakn = TRUE,
+  method.tau = "REML"
+)
 
 #---- Visualizations -----------------------------------------------------------
 
@@ -368,15 +260,15 @@ agbsoc_colors <- c("AGB" = "#117733",
 
 #.... Figure 1: Visualize overall results.......................................
 overall_results = data.frame(
-  "yi" = c(meta.agb.last$TE.random, meta.soc.last$TE.random, meta.eco.last$TE.random),
-  "yi.lower" = c(meta.agb.last$lower.random, meta.soc.last$lower.random, meta.eco.last$lower.random),
-  "yi.upper" = c(meta.agb.last$upper.random, meta.soc.last$upper.random, meta.eco.last$upper.random),
+  "yi" = c(meta_analysisAGB$TE.random, meta_analysisSOC$TE.random, meta_analysisECO$TE.random),
+  "yi.lower" = c(meta_analysisAGB$lower.random, meta_analysisSOC$lower.random, meta_analysisECO$lower.random),
+  "yi.upper" = c(meta_analysisAGB$upper.random, meta_analysisSOC$upper.random, meta_analysisECO$upper.random),
   "Pool" = c("AGB", "SOC", "ECO")
 ) %>% mutate(Pool = factor(Pool, levels = c("AGB", "SOC", "ECO"))
 )
 
 
-overall <- ggplot(overall_results, aes(x = Pool, y = yi, color = Pool)) +
+overall <- ggplot(overall_results %>% subset(Pool != "ECO"), aes(x = Pool, y = yi, color = Pool)) +
   geom_hline(yintercept = 0) +
   geom_point(size = 5) +
   scale_color_manual(values = agbsoc_colors) +
@@ -398,22 +290,22 @@ ggsave(
 
 #.... Figure 2: Visualize results separated by N................................
 
-n_df = data.frame(table(mutate(paired_last_yi, N = case_when(
+n_df = data.frame(table(mutate(paired_AGBSOC, N = case_when(
   avg_SCN < 15 ~ "High Nitrogen",
   avg_SCN >= 15 ~ "Low Nitrogen"
 ))$N)) %>% rename(N = Var1)
 
 ncomp_results = data.frame(
-  "yi" = c(meta.agb.last.lowN$TE.random, meta.agb.last.highN$TE.random, meta.SOC.last.lowN$TE.random, meta.SOC.last.highN$TE.random, meta.eco.last.lowN$TE.random, meta.eco.last.highN$TE.random),
-  "yi.lower" = c(meta.agb.last.lowN$lower.random, meta.agb.last.highN$lower.random, meta.SOC.last.lowN$lower.random, meta.SOC.last.highN$lower.random, meta.eco.last.lowN$lower.random, meta.eco.last.highN$lower.random),
-  "yi.upper" = c(meta.agb.last.lowN$upper.random, meta.agb.last.highN$upper.random, meta.SOC.last.lowN$upper.random, meta.SOC.last.highN$upper.random, meta.eco.last.lowN$upper.random, meta.eco.last.highN$upper.random),
+  "yi" = c(meta_analysisAGB_Nlim$TE.random, meta_analysisAGB_Nhigh$TE.random, meta_analysisSOC_Nlim$TE.random, meta_analysisSOC_Nhigh$TE.random, meta_analysisECO_Nlim$TE.random, meta_analysisECO_Nhigh$TE.random),
+  "yi.lower" = c(meta_analysisAGB_Nlim$lower.random, meta_analysisAGB_Nhigh$lower.random, meta_analysisSOC_Nlim$lower.random, meta_analysisSOC_Nhigh$lower.random, meta_analysisECO_Nlim$lower.random, meta_analysisECO_Nhigh$lower.random),
+  "yi.upper" = c(meta_analysisAGB_Nlim$upper.random, meta_analysisAGB_Nhigh$upper.random, meta_analysisSOC_Nlim$upper.random, meta_analysisSOC_Nhigh$upper.random, meta_analysisECO_Nlim$upper.random, meta_analysisECO_Nhigh$upper.random),
   "Pool" = c("AGB", "AGB", "SOC", "SOC", "ECO", "ECO"),
   "N" = c("Low Nitrogen", "High Nitrogen", "Low Nitrogen", "High Nitrogen", "Low Nitrogen", "High Nitrogen")
 ) %>% mutate(Pool = factor(Pool, levels = c("AGB", "SOC", "ECO")),
              N = factor(N, levels = c("Low Nitrogen", "High Nitrogen"))
 ) %>% merge(n_df, on = "N")
 
-n_plot <- ggplot(ncomp_results, aes(x = Pool, y = yi, color = Pool)) +
+n_plot <- ggplot(ncomp_results %>% subset(Pool != "ECO"), aes(x = Pool, y = yi, color = Pool)) +
   geom_hline(yintercept = 0) +
   geom_point(size = 5) +
   scale_color_manual(values = agbsoc_colors) +
@@ -451,22 +343,22 @@ ggsave(
 )
 
 #.... Visualize data by warming magnitude ......................................
-warm_levels = c('< 1.5', '1.5 - 2.5', '2.5 - 4.5', '> 4.5')
+warm_levels = meta_analysisAGB$subgroup.levels
 
 warmcomp_results = data.frame(
-  "yi" = c(meta.agb.last$TE.random.w, meta.soc.last$TE.random.w, meta.eco.last$TE.random.w),
-  "yi.lower" = c(meta.agb.last$lower.random.w, meta.soc.last$lower.random.w, meta.eco.last$lower.random.w ),
-  "yi.upper" = c(meta.agb.last$upper.random.w, meta.soc.last$upper.random.w, meta.eco.last$upper.random.w),
+  "yi" = c(meta_analysisAGB$TE.random.w, meta_analysisSOC$TE.random.w, meta_analysisECO$TE.random.w),
+  "yi.lower" = c(meta_analysisAGB$lower.random.w, meta_analysisSOC$lower.random.w, meta_analysisECO$lower.random.w ),
+  "yi.upper" = c(meta_analysisAGB$upper.random.w, meta_analysisSOC$upper.random.w, meta_analysisECO$upper.random.w),
   "Pool" = c(rep("AGB", 4), rep("SOC", 4), rep("ECO", 4)),
   "Warming" = c(rep(warm_levels, 3))
 ) %>% mutate(
-  Warming = factor(Warming, levels = warm_levels)
+  Warming = factor(Warming, levels = c('< 1.5',  '1.5 - 2.5',  '2.5 - 4.5','> 4.5'))
 )
- 
-warm_n <- data.frame(table(paired_last_yi$warmingCategory)) %>%
+
+warm_n <- data.frame(table(paired_AGBSOC$warmingCategory)) %>%
   rename(Warming = Var1)
 
-warm <- ggplot(warmcomp_results, aes(x = Warming, y = yi, color = Pool)) +
+warm <- ggplot(warmcomp_results %>% subset(Pool != "ECO"), aes(x = Warming, y = yi, color = Pool)) +
   geom_hline(yintercept = 0) +
   geom_point(size = 5, position = position_dodge(width = 0.5)) +
   scale_color_manual(values = agbsoc_colors) +
@@ -506,22 +398,24 @@ warm <- ggplot(warmcomp_results, aes(x = Warming, y = yi, color = Pool)) +
 
 #.... Visualize results by ecosystem type ......................................
 
+eco_order = meta_analysisAGB.byeco$subgroup.levels
+
 eco_levels = c("Grassland", "Agriculture", "Shrubland", "Forest", "Tundra")
 
 ecocomp_results = data.frame(
-  "yi" = c(meta.agb.last.byeco$TE.random.w, meta.soc.last.byeco$TE.random.w, meta.eco.last.byeco$TE.random.w),
-  "yi.lower" = c(meta.agb.last.byeco$lower.random.w, meta.soc.last.byeco$lower.random.w, meta.eco.last.byeco$lower.random.w ),
-  "yi.upper" = c(meta.agb.last.byeco$upper.random.w, meta.soc.last.byeco$upper.random.w, meta.eco.last.byeco$upper.random.w),
+  "yi" = c(meta_analysisAGB.byeco$TE.random.w, meta_analysisSOC.byeco$TE.random.w, meta_analysisECO.byeco$TE.random.w),
+  "yi.lower" = c(meta_analysisAGB.byeco$lower.random.w, meta_analysisSOC.byeco$lower.random.w, meta_analysisECO.byeco$lower.random.w ),
+  "yi.upper" = c(meta_analysisAGB.byeco$upper.random.w, meta_analysisSOC.byeco$upper.random.w, meta_analysisECO.byeco$upper.random.w),
   "Pool" = c(rep("AGB", 5), rep("SOC", 5), rep("ECO", 5)),
-  "Ecosystem" = c(rep(eco_levels, 3))
+  "Ecosystem" = c(rep(eco_order, 3))
 ) %>% mutate(
   Ecosystem = factor(Ecosystem, levels = eco_levels)
 )
 
-eco_n <- data.frame(table(paired_last_yi$Ecosystem)) %>%
+eco_n <- data.frame(table(paired_AGBSOC$Ecosystem)) %>%
   rename(Ecosystem = Var1)
 
-eco <- ggplot(ecocomp_results, aes(x = Ecosystem, y = yi, color = Pool)) +
+eco <- ggplot(ecocomp_results %>% subset(Pool != "ECO"), aes(x = Ecosystem, y = yi, color = Pool)) +
   geom_hline(yintercept = 0) +
   geom_point(size = 5, position = position_dodge(width = 0.5)) +
   scale_color_manual(values = agbsoc_colors) +
@@ -570,7 +464,7 @@ ggsave(
 
 #.... Figure 4: Visualize regression results ...................................
 
-results <- paired_last_yi %>%
+results <- paired_AGBSOC %>%
   mutate(group = ifelse(yi.AGB > 0, "yi.AGB > 0", "yi.AGB < 0")) %>%
   group_by(group) %>%
   summarize(
@@ -587,18 +481,18 @@ results <- paired_last_yi %>%
   ) %>%
   dplyr::select(group, p_value)
 
-paired_last_yi <- paired_last_yi %>%
+paired_AGBSOC <- paired_AGBSOC %>%
   mutate(group = ifelse(yi.AGB > 0, "yi.AGB > 0", "yi.AGB < 0"))
 
 soc_agb_incdec = data.frame(
-  "yi" = c(meta.SOC.last.AGBinc$TE.random, meta.SOC.last.AGBdec$TE.random),
-  "yi.lower" = c(meta.SOC.last.AGBinc$lower.random, meta.SOC.last.AGBdec$lower.random),
-  "yi.upper" = c(meta.SOC.last.AGBinc$upper.random, meta.SOC.last.AGBdec$upper.random),
+  "yi" = c(meta_analysisSOC.AGBinc$TE.random, meta_analysisSOC.AGBdec$TE.random),
+  "yi.lower" = c(meta_analysisSOC.AGBinc$lower.random, meta_analysisSOC.AGBdec$lower.random),
+  "yi.upper" = c(meta_analysisSOC.AGBinc$upper.random, meta_analysisSOC.AGBdec$upper.random),
   "group" = c("yi.AGB > 0", "yi.AGB < 0"),
-  "nobs" = c(nrow(paired_last_yi %>% subset(group == "yi.AGB > 0")), nrow(paired_last_yi %>% subset(group == "yi.AGB < 0")))
+  "nobs" = c(nrow(paired_AGBSOC %>% subset(group == "yi.AGB > 0")), nrow(paired_AGBSOC %>% subset(group == "yi.AGB < 0")))
 )
 
-scatter_trend_agbsoc <- ggplot(paired_last_yi, aes(x = yi.AGB, y = yi.SOC, color = group)) +
+scatter_trend_agbsoc <- ggplot(paired_AGBSOC, aes(x = yi.AGB, y = yi.SOC, color = group)) +
   geom_hline(yintercept = 0) +
   geom_vline(xintercept = 0)+
   geom_point() +
@@ -633,7 +527,7 @@ point_error_agbsoc <- ggplot(soc_agb_incdec, aes(x = group, y = yi, color = grou
   geom_hline(yintercept = 0) +
   geom_text(
     data = soc_agb_incdec,
-    aes(x = group, y = 0.02, label = paste0("n = ", nobs)),  vjust = 1.5, 
+    aes(x = group, y = 0.075, label = paste0("n = ", nobs)),  vjust = 1.5, 
     size = 10,
     inherit.aes = FALSE,
     fontface = "italic" 
@@ -665,13 +559,16 @@ point_error_agbsoc <- ggplot(soc_agb_incdec, aes(x = group, y = yi, color = grou
 
 trend_error <- plot_grid(scatter_trend_agbsoc, point_error_agbsoc, labels = c("a", "b"), ncol = 2, rel_widths = c(3,1.75), label_size = 30)
 
- # This data suggests that AGB responses are important for stabilizing/
- # increasing SOC concentrations when AGB increases, but if AGB decreases, 
- # this response is relatively unimportant and soil C decreases by a "fixed" amt
+# This data suggests that AGB responses are important for stabilizing/
+# increasing SOC concentrations when AGB increases, but if AGB decreases, 
+# this response is relatively unimportant and soil C decreases by a "fixed" amt
 
 ggsave(
   filename = paste0(figureFolder,"/trend_error.png"),  
   plot = trend_error,                             
   width = 13, height = 8, units = "in" , bg='#ffffff'  
 )
+
+
+
 

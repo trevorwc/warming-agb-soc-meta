@@ -233,17 +233,31 @@ calc_eco <- function(df) {
   return(df)
 }
 
+calc_eco_ind <- function(df) {
+  df$C.ECO = df$C.AGB.gm2 + df$C.SOC.gm2
+  df$T.ECO = df$T.AGB.gm2 + df$T.SOC.gm2
+  
+  df$V.C.ECO = (df$C.SD.AGB.gm2)^2 + (df$C.SD.SOC.gm2)^2
+  df$V.T.ECO = (df$T.SD.AGB.gm2)^2 + (df$T.SD.SOC.gm2)^2
+  
+  return(df)
+}
+
 standardize_ecosystem_type <- function(df) {
+  if ("Ecosystem.AGB" %in% colnames(df)){
+    col = "Ecosystem.AGB"
+  } else {
+    col = "Ecosystem"
+  }
   df %>% mutate(
     Ecosystem = case_when(
-      Ecosystem.AGB %in% c("Farmland") ~ "Agriculture",
-      Ecosystem.AGB %in% c("Forest") ~ "Forest",
-      Ecosystem.AGB %in% c("grassland", "Grassland") ~ "Grassland",
-      Ecosystem.AGB %in% c("shrubland","Shrubland/Heathland") ~ "Shrubland",
-      Ecosystem.AGB %in% c("tundra", "Tundra") ~ "Tundra"
+      .data[[col]] %in% c("Farmland") ~ "Agriculture",
+      .data[[col]] %in% c("Forest") ~ "Forest",
+      .data[[col]] %in% c("grassland", "Grassland") ~ "Grassland",
+      .data[[col]] %in% c("shrubland","Shrubland/Heathland") ~ "Shrubland",
+      .data[[col]] %in% c("tundra", "Tundra") ~ "Tundra"
     )
-  ) %>%
-    dplyr::select(-c(Ecosystem.AGB, Ecosystem.SOC))
+  ) 
 }
 
 #==== Dataset Imports ==========================================================
@@ -298,6 +312,7 @@ agb.gm2.avg <- agb.gm2 %>% site_level_avg()
 
 paired.gm2 <- paired %>% convert_to_g_m2()
 
+
 #...6.2. Create separate datasets
 
 
@@ -347,9 +362,17 @@ paired_last <- paired_full %>%
   get_last_obs() %>%
   subset(V.C.AGB > 0)
 
+paired_matched_std <- paired_matched %>% 
+  calc_eco() %>% 
+  standardize_ecosystem_type()
+
+paired.gm2.eco <- paired.gm2 %>% calc_eco_ind() %>% standardize_ecosystem_type()
+
 safe_write_xlsx(paired_full, '/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedfull_11-22.xlsx')
 safe_write_xlsx(paired_last, '/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedlast_11-22.xlsx')
 
+safe_write_xlsx(paired_matched_std, '/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/pairedmatched_11-23.xlsx')
+safe_write_xlsx(paired.gm2.eco, '/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported/paired.gm2.eco_11-23.xlsx')
 
 
 
