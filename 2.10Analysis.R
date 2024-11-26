@@ -675,3 +675,16 @@ ggsave(
   width = 13, height = 8, units = "in" , bg='#ffffff'  
 )
 
+#.... Principle components analysis ............................................ 
+vars_of_interest = c('maxWarming', 'yi.SOC', 'yi.AGB', 'yi.ECO', 
+                     'MAT.AGB', 'MAP.AGB', 'Elevation.AGB', 'avg_SCN')
+
+paired_full <- paired_last_yi %>% dplyr::select(all_of(vars_of_interest)) %>% tidyr::drop_na()
+
+paired.pca <- paired_full %>% prcomp(center = TRUE, scale. = TRUE)
+
+summary(paired.pca)
+
+biplot(paired.pca)
+
+

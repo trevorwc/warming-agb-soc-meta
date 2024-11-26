@@ -14,6 +14,8 @@ library(dplyr)
 library(ggplot2)
 library(cowplot)
 library(MASS)
+library(tidyr)
+
 
 #===== Functions ===============================================================
 categorize_temperature <- function(df) {
@@ -570,5 +572,15 @@ ggsave(
 )
 
 
+#.... Principle components analysis ............................................ 
+vars_of_interest = c('bd_0_15', 'Aridity', 'clay_0_15', 'phh2o_0_15',
+                     'maxWarming', 'yi.SOC', 'yi.AGB', 'yi.ECO', 
+                     'MAT', 'MAP', 'Elevation', 'avg_SCN')
 
+paired_full <- paired_AGBSOC %>% dplyr::select(all_of(vars_of_interest)) %>% tidyr::drop_na()
 
+paired.pca <- paired_full %>% prcomp(center = TRUE, scale. = TRUE)
+
+summary(paired.pca)
+
+biplot(paired.pca)
