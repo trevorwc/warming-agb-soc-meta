@@ -12,6 +12,7 @@ library(MASS)
 library(lmodel2)
 library(gridExtra)
 library(cowplot)
+library(ggfortify)
 
 #==== Functions ================================================================
 
@@ -105,6 +106,16 @@ meta.agb.last.byeco <- metagen(
   method.tau = "REML"
 )
 
+meta.agb.last.byN <- metagen(
+  TE = yi.AGB, 
+  seTE = sqrt(vi.AGB),
+  data = paired_last_yi %>% subset(avg_SCN > 0),
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
+  subgroup = (avg_SCN >= 15),
+  hakn = TRUE,
+  method.tau = "REML"
+)
 
 meta.agb.last.lowN <- metagen(
   TE = yi.AGB, 
@@ -157,6 +168,17 @@ meta.soc.last.byeco <- metagen(
   method.tau = "REML"
 )
 
+meta.soc.last.byN <- metagen(
+  TE = yi.SOC, 
+  seTE = sqrt(vi.SOC),
+  data = paired_last_yi %>% subset(avg_SCN > 0),
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
+  subgroup = (avg_SCN >= 15), # N low?
+  hakn = TRUE,
+  method.tau = "REML"
+)
+
 meta.SOC.last.lowN <- metagen(
   TE = yi.SOC, 
   seTE = sqrt(vi.SOC),
@@ -200,6 +222,17 @@ meta.eco.last.byeco <- metagen(
   comb.fixed = FALSE, # random-effects model
   comb.random = TRUE,
   subgroup = Ecosystem,
+  hakn = TRUE,
+  method.tau = "REML"
+)
+
+meta.eco.last.byN <- metagen(
+  TE = yi.ECO, 
+  seTE = sqrt(vi.ECO),
+  data = paired_last_yi %>% subset(avg_SCN > 0),
+  comb.fixed = FALSE, # random-effects model
+  comb.random = TRUE,
+  subgroup = (avg_SCN >= 15),
   hakn = TRUE,
   method.tau = "REML"
 )
@@ -675,16 +708,5 @@ ggsave(
   width = 13, height = 8, units = "in" , bg='#ffffff'  
 )
 
-#.... Principle components analysis ............................................ 
-vars_of_interest = c('maxWarming', 'yi.SOC', 'yi.AGB', 'yi.ECO', 
-                     'MAT.AGB', 'MAP.AGB', 'Elevation.AGB', 'avg_SCN')
-
-paired_full <- paired_last_yi %>% dplyr::select(all_of(vars_of_interest)) %>% tidyr::drop_na()
-
-paired.pca <- paired_full %>% prcomp(center = TRUE, scale. = TRUE)
-
-summary(paired.pca)
-
-biplot(paired.pca)
 
 

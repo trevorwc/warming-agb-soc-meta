@@ -15,7 +15,10 @@ library(ggplot2)
 library(cowplot)
 library(MASS)
 library(tidyr)
-
+library(ggbiplot)
+library(factoextra)
+library(ggpmisc)
+library(Rtsne)
 
 #===== Functions ===============================================================
 categorize_temperature <- function(df) {
@@ -44,6 +47,7 @@ standardize_ecosystem_type <- function(df) {
 }
 
 #==== Dataset Imports ==========================================================
+set.seed(123)
 
 figureFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/Figures/25november_pairedData'
 dataFolder <- '/Users/trevor/Desktop/Research/Warming Ecosystem C/CleanedData/2Exported'
@@ -572,15 +576,128 @@ ggsave(
 )
 
 
-#.... Principle components analysis ............................................ 
+#.... Dimensionality reduction ................................................. 
 vars_of_interest = c('bd_0_15', 'Aridity', 'clay_0_15', 'phh2o_0_15',
                      'maxWarming', 'yi.SOC', 'yi.AGB', 'yi.ECO', 
                      'MAT', 'MAP', 'Elevation', 'avg_SCN')
 
+var_colors <- c("yi.AGB" = "#117733",
+                   "yi.SOC" = "#582707",
+                   "yi.ECO" = "darkgray",
+                    'bd_0_15' = "black", 'Aridity'= "black", 'clay_0_15'= "black",
+                'phh2o_0_15'= "black",
+                     'maxWarming'= "black",
+                     'MAT'= "black", 'MAP'= "black", 'Elevation'= "black", 'avg_SCN'= "black")
+
 paired_full <- paired_AGBSOC %>% dplyr::select(all_of(vars_of_interest)) %>% tidyr::drop_na()
 
+# Principle components analysis
 paired.pca <- paired_full %>% prcomp(center = TRUE, scale. = TRUE)
 
 summary(paired.pca)
 
-biplot(paired.pca)
+paired_full <- paired_full %>% mutate( 
+  group = case_when(
+    yi.ECO >= 0 ~ "+",
+    yi.ECO <0 ~ "-"
+  ))
+
+biplot <- fviz_pca_biplot(paired.pca,
+                geom = "point",     
+                col.ind = "lightblue",
+                col.var = "black",
+                repel = TRUE,      
+                label = "var",             
+                addEllipses = FALSE#,
+                #ellipse.group = paired_full$group
+                ) + 
+  labs(
+    color = "Ecosystem C", 
+  ) +
+  guides(
+    shape = "none",   
+    size = "none",    
+    fill = "none", 
+    alpha = "none",   
+    col.var = "none"  
+  ) +
+  theme_light() +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"),
+        plot.title = element_blank(), 
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold")) 
+
+scree_plot <- fviz_eig(paired.pca, 
+         addlabels = TRUE,    # Add labels on the bars
+         ylim = c(0, 40),     # Set y-axis limits
+         barfill = "lightblue", # Color for the bars
+         barcolor = "black") + 
+  theme_light()  +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"),
+        plot.title = element_blank())
+
+pca_plots <- plot_grid(biplot, scree_plot, labels = c("a", "b"), ncol = 2, rel_widths = c(3,2), label_size = 20)
+
+ggsave(
+  filename = paste0(figureFolder,"/pca_plots.png"),  
+  plot = pca_plots,                             
+  width = 10, height = 6, units = "in" , bg='#ffffff'  
+)
+
+
+# tSNE
+
+tsne_paired <- Rtsne(paired_full)
+
+tsne_plot <- data.frame(x = tsne_paired$Y[,1], 
+                        y = tsne_paired$Y[,2])
+
+ggplot(tsne_plot) + 
+  geom_point(aes(x=x,y=y)) +
+  scale_color_gradient(low = "darkblue", high = "red")
+
+#.... Visualize Duation ........................................................
+
+dur_colors <- c("yi.AGB" = "#117733",
+                "yi.SOC" = "#582707",
+                "yi.ECO" = "darkgray")
+
+
+long_paired <- paired_AGBSOC %>% 
+  dplyr::select(all_of(c('Duration', 'yi.SOC', 'yi.AGB', 'yi.ECO'))) %>%
+  pivot_longer(cols = c('yi.SOC', 'yi.AGB', 'yi.ECO'))
+
+
+dur_plot <- ggplot(long_paired, aes(x = Duration, y = value, color = name))+
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_poly_eq(
+    aes(label = paste(..p.value.label.., sep = "~~")),
+    formula = y ~ x,
+    parse = TRUE,
+    label.x.npc = "right", 
+    label.y.npc = "top",
+    size = 10
+  ) +
+  scale_color_manual(values = dur_colors) +
+  labs(x = "Duration (yrs)",
+       y = "lnRR",
+       color = "C Pool") +
+  theme_light()  +
+  theme(
+    text = element_text(size = 30),
+    legend.position = "right",
+    strip.background = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold") 
+  )
+  
+ggsave(
+  filename = paste0(figureFolder,"/duration.png"),  
+  plot = dur_plot,                             
+  width = 8, height = 6, units = "in" , bg='#ffffff'  
+)
