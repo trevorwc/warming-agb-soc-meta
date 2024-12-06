@@ -19,6 +19,7 @@ library(ggbiplot)
 library(factoextra)
 library(ggpmisc)
 library(Rtsne)
+library(stats)
 
 #===== Functions ===============================================================
 categorize_temperature <- function(df) {
@@ -59,6 +60,21 @@ paired_AGBSOC <- read.xlsx(paste0(dataFolder, '/metaAGBSOCECO_8-28-24.xlsx')) %>
 #.... Basic dataset infomation .................................................
 
 nrow(unique(paired_AGBSOC %>% dplyr::select(c(Latitude, Longitude))))
+
+mean(paired_AGBSOC$Duration, na.rm = TRUE)
+
+median(paired_AGBSOC$Duration, na.rm = TRUE)
+
+ld <- paired_AGBSOC %>%
+  group_by(across(c(Latitude, Longitude, Air.DT, Soil.DT))) %>%
+  summarize(
+    longest_dur = max(Duration)
+  ) %>%
+  ungroup()
+
+mean(ld$longest_dur, na.rm = TRUE)
+
+
 
 #.... Conduct separate meta-analyses ...........................................
 meta_analysisAGB <- metagen(
@@ -666,8 +682,8 @@ dur_colors <- c("yi.AGB" = "#117733",
 
 
 long_paired <- paired_AGBSOC %>% 
-  dplyr::select(all_of(c('Duration', 'yi.SOC', 'yi.AGB', 'yi.ECO'))) %>%
-  pivot_longer(cols = c('yi.SOC', 'yi.AGB', 'yi.ECO'))
+  dplyr::select(all_of(c('Duration', 'yi.SOC', 'yi.AGB'))) %>%
+  pivot_longer(cols = c('yi.SOC', 'yi.AGB'))
 
 
 dur_plot <- ggplot(long_paired, aes(x = Duration, y = value, color = name))+
@@ -699,5 +715,6 @@ dur_plot <- ggplot(long_paired, aes(x = Duration, y = value, color = name))+
 ggsave(
   filename = paste0(figureFolder,"/duration.png"),  
   plot = dur_plot,                             
-  width = 8, height = 6, units = "in" , bg='#ffffff'  
+  width = 8, height = 10, units = "in" , bg='#ffffff'  
 )
+

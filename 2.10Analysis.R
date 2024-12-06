@@ -13,6 +13,8 @@ library(lmodel2)
 library(gridExtra)
 library(cowplot)
 library(ggfortify)
+library(plotbiomes)
+library(stringr)
 
 #==== Functions ================================================================
 
@@ -80,6 +82,17 @@ paired_last_yi <- paired_last %>%
   subset((vi.AGB/yi.AGB < 1000) & !is.na(warmingCategory)) 
 
 #----- Last observation dataset ------------------------------------------------
+
+mean(paired_last_yi$M.C.SOC)/mean(paired_last_yi$M.C.AGB)
+
+summary(aov(maxWarming ~ Ecosystem, paired_last_yi))
+
+x2_df <- table(paired_last_yi$Ecosystem, paired_last_yi$Warming.Treatment.Group)
+
+fisher.test(x2_df)
+
+mean(as.numeric(str_extract(paired_last_yi$Depth, "(?<=-)(\\d+)(?=cm)")))
+max(as.numeric(str_extract(paired_last_yi$Depth, "(?<=-)(\\d+)(?=cm)")))
 
 #.... AGB ......................................................................
 
@@ -601,6 +614,19 @@ ggsave(
   width = 15, height = 12, units = "in" , bg='#ffffff'  
 )
 
+ggsave(
+  filename = paste0(figureFolder,"/warm.png"),  
+  plot = warm,                             
+  width = 8, height = 6, units = "in" , bg='#ffffff'  
+)
+
+ggsave(
+  filename = paste0(figureFolder,"/eco.png"),  
+  plot = eco,                             
+  width = 8, height = 6, units = "in" , bg='#ffffff'  
+)
+
+
 #.... Figure 4: Visualize regression results ...................................
 
 results <- paired_last_yi %>%
@@ -708,5 +734,119 @@ ggsave(
   width = 13, height = 8, units = "in" , bg='#ffffff'  
 )
 
+#.... Visualize Whittaker biomes ...............................................
 
+whit <- whittaker_base_plot() +
+  geom_point(data = paired_last_yi, aes(x = `MAT.AGB`, y = `MAP.AGB`*0.1)) +
+  theme_light() +
+  theme(
+    text = element_text(size = 30),
+    legend.text = element_text(size = 20),
+    legend.position = "right",
+    legend.direction = "vertical",
+    strip.background = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+  ) +
+  guides(
+    fill = guide_legend(ncol = 1)
+  )
+
+ggsave(
+  filename = paste0(figureFolder,"/whittaker.png"),  
+  plot = whit,                             
+  width = 13, height = 8, units = "in" , bg='#ffffff'  
+)
+
+#.... AGB response over warming magnitude by ecosystem .........................
+
+results2 <- paired_last_yi %>%
+  subset(Ecosystem != 'Forest') %>%
+  group_by(Ecosystem) %>%
+  summarize(
+    fit = list(rlm(yi.AGB ~ maxWarming, data = pick(everything()))),
+    .groups = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    p_value = {
+      model_summary <- summary(fit)
+      2 * (1 - pt(abs(model_summary$coefficients[2, "t value"]), 
+                  df = model_summary$df[2]))
+    }
+  ) %>%
+  dplyr::select(Ecosystem, p_value)
+
+warming_by_eco <- ggplot(paired_last_yi %>% subset(Ecosystem != 'Forest'), aes(x = maxWarming, y = yi.AGB, color = Ecosystem)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(
+    data = results2,
+    aes(x = 2.875, y = c(1.35,1.2,1.05,0.9), color = Ecosystem, label = paste0(Ecosystem, ": p = ", signif(p_value, 3))),
+    inherit.aes = FALSE,
+    vjust = 1.5,
+    size = 7.5,
+    fontface = "italic",
+    show.legend = FALSE 
+  ) +
+  labs( x = 'Warming Magnitude (\u00b0C)',
+        y = 'AGB lnRR') +
+  theme_light() +
+  theme(
+    text = element_text(size = 30),
+    legend.text = element_text(size = 20),
+    legend.position = "right",
+    legend.direction = "vertical",
+    strip.background = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+  ) 
+
+ggsave(
+  filename = paste0(figureFolder,"/warming_by_eco.png"),  
+  plot = warming_by_eco,                             
+  width = 8, height = 6, units = "in" , bg='#ffffff'  
+)
+
+#.... SOC response over warming magnitude by ecosystem .........................
+
+results3 <- paired_last_yi %>%
+  group_by(Ecosystem) %>%
+  summarize(
+    fit = list(rlm(yi.SOC ~ maxWarming, data = pick(everything()))),
+    .groups = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    p_value = {
+      model_summary <- summary(fit)
+      2 * (1 - pt(abs(model_summary$coefficients[2, "t value"]), 
+                  df = model_summary$df[2]))
+    }
+  ) %>%
+  dplyr::select(Ecosystem, p_value)
+
+ggplot(paired_last_yi, aes(x = maxWarming, y = yi.SOC, color = Ecosystem)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(
+    data = results3,
+    aes(x = 2.875, y = c(1.5,1.35,1.2,1.05,0.9), color = Ecosystem, label = paste0(Ecosystem, ": p = ", signif(p_value, 3))),
+    inherit.aes = FALSE,
+    vjust = 1.5,
+    size = 7.5,
+    fontface = "italic" 
+  ) +
+  labs( x = 'Warming Magnitude (\u00b0C)',
+        y = 'SOC lnRR') +
+  theme_light() +
+  theme(
+    text = element_text(size = 30),
+    legend.text = element_text(size = 20),
+    legend.position = "right",
+    legend.direction = "vertical",
+    strip.background = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+  ) 
 
